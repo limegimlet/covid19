@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import numpy as np
 import pandas as pd
 from datetime import datetime
@@ -6,7 +7,7 @@ from datetime import datetime
 import plotly as py
 #from plotly.offline import download_plotlyjs, init_notebook_mode, plot, iplot
 #init_notebook_mode(connected=True)
-
+import cufflinks as cf
 import plotly.graph_objects as go
 
 # set default plotly theme
@@ -28,16 +29,34 @@ warnings.simplefilter('once', category=UserWarning)
 import process_test_data as pt
 import process_hosp_data as hd
 
+#curfew_cities = ['Paris', 'Rouen', 'Marseille', 'Lyon', 'Montpellier', 'Saint-Etienne', 'Montpellier']
+#metro_df_wide.reset_index('class_age')[curfew_cities]
+
 ### Data source urls ###
 
 source = 'https://www.data.gouv.fr/fr/datasets/donnees-relatives-aux-resultats-des-tests-virologiques-covid-19/'
 url = "https://www.data.gouv.fr/fr/datasets/r/406c6a23-e283-4300-9484-54e78c8ae675"
 meta_url = "https://www.data.gouv.fr/fr/datasets/r/39aaad1c-9aac-4be8-96b2-6d001f892b34"
 
+metro_rea = 'https://www.data.gouv.fr/fr/datasets/r/62ec32ae-6b3e-4e4a-b81f-eeb4e8759a4d'
+
+# AT LAST!!!!!!!!!
+#metropoles_src = ''
+rea_metro_src = 'https://www.data.gouv.fr/en/datasets/indicateurs-de-lactivite-epidemique-part-des-patients-covid-19-dans-les-reanimations/'
+
+
 ### Geojson for FR depts and regions ###
 
 dept_geos = 'https://static.data.gouv.fr/resources/carte-des-departements-2-1/20191202-212236/contour-des-departements.geojson'
 region_geos = 'https://france-geojson.gregoiredavid.fr/repo/regions.geojson'
+commune_geos = 'https://public.opendatasoft.com/explore/dataset/geoflar-communes-2013/download/?format=geojson&timezone=Europe/Berlin&lang=en'
+
+epci_communes = 'https://www.data.gouv.fr/fr/datasets/contours-des-epci-2015/'
+
+# geo csv
+villes = 'https://public.opendatasoft.com/explore/dataset/code-insee-postaux-geoflar/download/?format=csv&timezone=Europe/Berlin&lang=en&use_labels_for_header=true&csv_separator=%3B'
+curfew_cities = "data/fr_curf_cities.pkl"
+
 
 with urlopen(dept_geos) as response:
     fr_dept = json.load(response)
@@ -249,6 +268,7 @@ colormap = {'OK': 'rgb(255,245,240)',
 
 def add_cities():
     villes_df = pd.read_csv("data/villes.csv")
+    
     trace = go.Scattergeo(
             lon = villes_df['lon'],
             lat = villes_df['lat'],
@@ -260,6 +280,24 @@ def add_cities():
             name="Major cities")
     
     return trace
+
+def add_curfew_cities(path=curfew_cities):
+    
+    fr_curf_cities = pd.read_pickle(path)
+    trace = go.Scattergeo(
+        lon = fr_curf_cities['lon'],
+        lat = fr_curf_cities['lat'],
+        text = fr_curf_cities['hovertext'],
+        hoverinfo = 'text',
+        mode='markers',
+        marker=dict(color='yellow',
+                    size=7,
+                    line=dict(width=2,
+                              color='aqua')),
+        name='Oct 17: Under curfew')
+    
+    return trace
+    
 
 def make_overview_map(map_col, date, latest_df, source=source, colormap=colormap):
     '''Plots a discrete-scale choropleth for Covid alert levels in France.'''
@@ -283,7 +321,7 @@ def make_overview_map(map_col, date, latest_df, source=source, colormap=colormap
                     projection="mercator")
 
                 
-    fig.update_geos(fitbounds="locations", visible=False, resolution=50)
+    fig.update_geos(fitbounds="locations", visible=False)
     
 
     fig.update_layout(margin={"r":0,"t":0,"l":0,"b":20},
@@ -333,7 +371,7 @@ def make_value_map(map_col, df, source=source):
     
     #fig.add_traces(cities)
                     
-    fig.update_geos(fitbounds="locations", visible=False, resolution=50)
+    fig.update_geos(fitbounds="locations", visible=False)
 
     fig.update_layout(margin=dict(r=0, t=0, l=0, b=20),
                      title=dict(text=title, y=.98, x=0.2, xanchor='left', yanchor='top'),
@@ -367,7 +405,7 @@ def map_rea(map_col, df, source=hd.source):
                     projection="mercator")
     
                     
-    fig.update_geos(fitbounds="locations", visible=False, resolution=50)
+    fig.update_geos(fitbounds="locations", visible=False)
     
     #fig.add_traces(cities)
 
@@ -380,14 +418,47 @@ def map_rea(map_col, df, source=hd.source):
     
     return fig
 
+### For first page of covid_dataviz ###
 
 
-def to_html(fig, fname, auto_open=True):
+def create_kpi_summary(df):
+    val_cols = ['incid_tous', 'incid_70+', 'rea%']
+    q = "dom_tom=='False'" # still missing rea values for domtom
+    kpi_fr_df = df.query(q).groupby('jour')[val_cols].mean().round(0)
+    
+    return kpi_fr_df
+
+
+
+def plot_kpi_trends(kpi_fr_df):
+    '''Plots daily ttls for alert indicator for all of France.'''
+    
+    rea_hlines = [dict(y=30, color='darkgreen', width=1.5, dash='dash')]
+                 #dict(y=60, color='darkred')]
+    
+    latest_date = kpi_fr_df.index.max()
+    hline_annot = [{'text':'30% ICU occupancy','y':'30', 'x':'2020-07-02',
+                    'textangle':0,'ay':-10}]
+    
+    fig = kpi_fr_df.iplot(title="<b>Covid-19 indicator trends - France</b>",
+                          kind='bar',
+                          hline=rea_hlines,
+                          annotations=hline_annot,
+                          asFigure=True)
+
+
+    fig.update_layout(legend_title_text="Click to hide/show,<br>double-click to show only:",
+                  legend_title_font_size=13)
+    
+    return fig
+
+
+def to_html(fname, fig, auto_open=False):
     filepath = "../covid_dataviz/{}".format(fname)
-    pio.write_html(fig, file=filepath, auto_open=auto_open)
+    pio.write_html(fig, filepath, auto_open=False, include_plotlyjs='cdn')
     print("Map saved to {}".format(filepath))
     
-### KPI lineplot functions ###
+### KPI lineplot functions  - for regional breakdown pg of covid_dataviz###
 
 def make_kpi_long_df(kpi_df):
     val_cols = ['incid_tous', 'incid_70+', 'rea%']
@@ -398,6 +469,9 @@ def make_kpi_long_df(kpi_df):
     return kpi_long
 
 def plot_reg_kpi(reg, df):
+    '''Compares indicator lines by department & by indicator for a given region. 
+    Used on regional breakdown page of covid_dataviz.'''
+    
     regname = reg_ref_df['libelle_reg'].loc[reg_ref_df['reg']==reg].unique()[0]
     fig = px.line(df.query('reg==@reg').dropna(), x='jour', y='value', 
                   color='libelle_dep',
@@ -413,16 +487,17 @@ def plot_reg_kpi(reg, df):
     
     return fig
 
+
 def output_reg_plots(reglist, df, auto_open=False):
     kpi_long_df = make_kpi_long_df(df)
     for reg in reglist:
-        regname = reg_ref_df['libelle_reg'].loc[reg_ref_df['reg']==reg].unique()[0]
+        #regname = reg_ref_df['libelle_reg'].loc[reg_ref_df['reg']==reg].unique()[0]
         fig = plot_reg_kpi(reg, kpi_long_df)
 
         # save to html
         fname = "kpi_{}.html".format(reg)
-        path = "../covid_dataviz/{}".format(str.lower(fname))
-        kpi.to_html(fig, path, auto_open=auto_open)
+        #path = "../covid_dataviz/{}".format(str.lower(fname))
+        to_html(fname, fig, auto_open)
         
 def output_reg_iframes(reglist):        
     for reg in reglist:
@@ -453,32 +528,34 @@ if __name__ == '__main__':
     fig = make_overview_map(metric, latest_date, latest_df.query(q))
      
     # add cities to FR maps
-    #print("Adding cities...")
-    cities_trace = add_cities()
-    fig.add_traces(cities_trace)
+    print("Adding cities...")
+    
+    #cities_trace = add_cities()
+    curfew_trace = add_curfew_cities(curfew_cities)
+    fig.add_traces(curfew_trace)
     
     # save alert level map as html
     print("Saving to HTML...")
     fname = 'alerts.html'
-    path = '../covid_dataviz/{}'.format(fname)
-    to_html(fig, path, False)
+    to_html(fname, fig, False)
     
-    # save IDF alert level map as html
-    reg = 11
-    reg_ref_df = pt.rd.create_region_df()
-    idf = reg_ref_df['libelle_dep'].loc[reg_ref_df['reg']==reg].values
-    fname = 'alerts_idf.html'
-    path = '../covid_dataviz/{}'.format(fname)
-    
-    print("\nGenerating IDF map...")
-    q = "libelle_dep in @idf"
-    idf_fig = make_overview_map(metric, latest_date, latest_df.query(q))
-    
-    print("Saving to HTML...")
-    to_html(idf_fig, path, False)
-    
-    print("Done!\n")
-    
-    #reg_list = reg_ref_df.query('reg > 10')['reg'].unique()
-    #
+    print("Generating FR indicator trends plot...")
+    kpi_fr_df = create_kpi_summary(kpi_df)
+    fig = plot_kpi_trends( kpi_fr_df)
+    fig.show()
 
+    print("Saving to HTML...")
+    fname="kpi_fr_trends.html"
+    to_html(fname, fig, auto_open=False)
+    
+    
+    # add regions to kpi_df
+    reg_ref_df = pt.rd.create_region_df()
+    kpi_df = reg_ref_df[['reg', 'libelle_reg', 'libelle_dep']].merge(kpi_df).sort_values(['reg', 'jour'])
+    reglist = [11, 24, 27, 28, 32, 44, 52, 53, 75, 76, 84, 93, 94]
+    
+    print("Generating region line plots...")
+    output_reg_plots(reglist, kpi_df)
+    
+    print("****** DONE! ******\n")
+    

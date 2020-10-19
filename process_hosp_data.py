@@ -14,6 +14,10 @@ source = 'https://www.data.gouv.fr/en/datasets/donnees-hospitalieres-relatives-a
 hosp_url = "https://www.data.gouv.fr/fr/datasets/r/63352e38-d353-4b54-bfd1-f1b3ee1cabd7"
 hosp_meta_url = "https://www.data.gouv.fr/fr/datasets/r/3f0f1885-25f4-4102-bbab-edec5a58e34a"
 
+# nouvelle admissions
+
+new_patients_url = 'https://www.data.gouv.fr/en/datasets/r/6fadff46-9efd-4c53-942a-54aca783c30c'
+
 # FR ICU (réanimation) beds
 
 icu_xls = "/data/drees_lits_reanimation_2013-2018.xlsx"
