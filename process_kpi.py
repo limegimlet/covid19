@@ -113,7 +113,8 @@ def assign_alert_level(kpi_df):
 
 def assign_overall_alert(row):
     #if row['incid_tous_alerte'] == np.isnan():
-    if pd.isnull(row['incid_tous']):
+    #if pd.isnull(row['incid_tous']) or isnull('incid_70+') or isnull(row['rea%']):
+    if pd.isnull(row[['incid_tous', 'incid_70+', 'rea%']]).any():
         status=np.nan      
     elif (row['incid_tous'] > 250. and row['incid_70+'] >100. and row['rea%'] >60.):
         status = "État d'urgence sanitaire"
@@ -176,6 +177,10 @@ def create_kpi_df(rea_level='reg'):
     kpi_list = [incid70, rea_pct]
     for kpi in kpi_list:
         df = df.merge(kpi, how='outer')
+        
+    # backfill rea% - for cases like Oct 15 missing data from rea only
+    # doing it before creating 'niveau global' ensures all 3 kpi are used for alert label
+    df['rea%'].fillna(method='pad', inplace=True)
 
     # streamline df
     keep_cols = ['libelle_dep','jour', 'dom_tom', 'rolling_pos_100k', '70+', 'rea%']
@@ -198,8 +203,8 @@ def create_kpi_df(rea_level='reg'):
     
     kpi_df = kpi_df.sort_values(['libelle_dep', 'jour']).reset_index()
     
-    for fmt in ['csv','pkl']:
-        save_df(kpi_df, fmt)
+    #for fmt in ['csv','pkl']:
+     #   save_df(kpi_df, fmt)
         
     return kpi_df
 
@@ -306,8 +311,8 @@ def make_overview_map(map_col, date, latest_df, source=source, colormap=colormap
     #map_df = get_latest('niveau_global', kpi_df)
     #date = map_df.name
     title = 'Alert levels on {}<br>(hover for more info)'.format(date)
-    source_str = source_str = "Source: <a href='{}' color='blue'>Santé Public France</a>".format(source)
-    
+    source_str = "Source: <a href='{}' color='blue'>Santé Public France</a>".format(source) # for annotation
+        
     fig = px.choropleth(latest_df, geojson=fr_dept, color=map_col,
                     locations="libelle_dep", featureidkey="properties.nom",
                     #animation_frame="variable", animation_group='libelle_dep',
@@ -350,23 +355,23 @@ def make_overview_map(map_col, date, latest_df, source=source, colormap=colormap
     
     return fig
 
-def make_value_map(map_col, df, source=source):
+def make_value_map(map_col, date, latest_df, source=source):
     '''Plots a continuous-scale choropleth for Covid alert indicators in France.'''
     
     # var used in map function
-    map_df = get_latest(map_col, df)
-    date = map_df.name # for title
+    #map_df = get_latest(map_col, df)
+    #date = map_df.name # for title
     title = '{} - {}'.format(str.capitalize(map_col).replace("_"," "), date)    
-    source_str = source_str = "Source: <a href='{}' color='blue'>Santé Public France</a>".format(source) # for annotation
+    source_str = "Source: <a href='{}' color='blue'>Santé Public France</a>".format(source) # for annotation
     #alert_col = '{}_alerte'.format(map_col) # for hover text
     
-    fig = px.choropleth(map_df, geojson=fr_dept, color=map_col,
+    fig = px.choropleth(latest_df, geojson=fr_dept, color=map_col,
                     locations="libelle_dep", featureidkey="properties.nom",
                     #animation_frame="variable", animation_group='libelle_dep',
                     hover_name='libelle_dep',  hover_data={#alert_col: True,
                                                            'libelle_dep': False},
                     color_continuous_scale="Reds",
-                    #range_color=[min(metric_score), max(metric_score)],
+                    range_color=[min(metric_score), max(metric_score)],
                     projection="mercator")
     
     #fig.add_traces(cities)
@@ -383,19 +388,19 @@ def make_value_map(map_col, df, source=source):
     return fig
 
 
-def map_rea(map_col, df, source=hd.source):
+def map_rea(map_col, date, latest_df, source=hd.source):
     '''Plots a continuous-scale choropleth for ICU saturation (in %) in France.
     Max range value = 60%, which is the threshold for "état d'urgence sanitaire"
     (when incidence rate > 250 & elderly incidence rate > 100 are also reached).'''
     
-    map_df = get_latest(map_col, df)
-    date = map_df.name # for title
+    #map_df = get_latest(map_col, df)
+    #date = map_df.name # for title
     
-    title = '{} - {}'.format(str.capitalize(map_col).replace("_"," "), date)    
-    source_str = source_str = "Source: <a href='{}' color='blue'>Santé Public France</a>".format(source) # for annotation
+    title = 'Rea % saturation - {}'.format(date)
+    source_str = source_str = "Source: <a href='{}' color='blue'>Santé Publique France</a>".format(source) # for annotation
     #alert_col = '{}_alerte'.format(map_col) # for hover text
     
-    fig = px.choropleth(map_df, geojson=fr_dept, color=map_col,
+    fig = px.choropleth(latest_df, geojson=fr_dept, color=map_col,
                     locations="libelle_dep", featureidkey="properties.nom",
                     #animation_frame="variable", animation_group='libelle_dep',
                     hover_name='libelle_dep',  hover_data={#alert_col: True,
@@ -433,22 +438,59 @@ def create_kpi_summary(df):
 def plot_kpi_trends(kpi_fr_df):
     '''Plots daily ttls for alert indicator for all of France.'''
     
-    rea_hlines = [dict(y=30, color='darkgreen', width=1.5, dash='dash')]
-                 #dict(y=60, color='darkred')]
+    #rea_hlines = [dict(y=30, color='darkgreen', width=1.5, dash='dash')]
+     #            #dict(y=60, color='darkred')]
     
     latest_date = kpi_fr_df.index.max()
-    hline_annot = [{'text':'30% ICU occupancy','y':'30', 'x':'2020-07-02',
-                    'textangle':0,'ay':-10}]
+    #hline_annot = [{'text':'30% ICU occupancy','y':'30', 'x':'2020-07-02',
+                    #'textangle':0,'ay':-10}]
     
     fig = kpi_fr_df.iplot(title="<b>Covid-19 indicator trends - France</b>",
                           kind='bar',
-                          hline=rea_hlines,
-                          annotations=hline_annot,
+                          #hline=rea_hlines,
+                          #annotations=hline_annot,
                           asFigure=True)
+    
+    line_trace = go.Scatter(x=[kpi_fr_df.index.min(), kpi_fr_df.index.max()], 
+                            y=[30,30],  # on oct 15, macron said we need to keep new ICU admissions to < 200
+                            mode='lines', 
+                            line_color='green',
+                            line_dash='dashdot',
+                            name="<br>\nICU % capacity threshold<br>for Alerte maximale")
+
+    fig.add_traces(line_trace)
 
 
     fig.update_layout(legend_title_text="Click to hide/show,<br>double-click to show only:",
                   legend_title_font_size=13)
+    
+    return fig
+
+# get NEW reanimations
+
+def get_new_admissions(url=hd.new_patients_url):
+    '''Creates dataframe of *new* ICU patients & patient deaths in hospital.
+    Used on covid_dataviz home page, as a companion plot to kpi_trends .'''
+    
+    new_admissions = pd.read_csv(url, sep=';', dtype=dict(dep='str')) 
+    new_admissions = new_admissions.groupby('jour').sum().rolling(7).mean().round(0) # rolling 7d avg, no decimals
+    cols = new_admissions.columns
+    newcols = [str.split(col, "_")[1] for col in cols]
+    new_admissions.columns = newcols
+    
+    return new_admissions
+
+def plot_rea_dc(kpi_fr_df, palette=hd.hosp_colormap):
+    #kpi_fr_df = kpi.create_kpi_summary(kpi_df)
+    cols = ['rea', 'dc']
+    new_ad = get_new_admissions()
+    rea_dc_df = kpi_fr_df.join(new_ad)
+
+    fig = rea_dc_df[cols].iplot(
+            kind='bar',
+            colors=palette,
+            title="<b>Patients admitted to ICU vs. died in hospital - France</b>\n", 
+            asFigure=True)
     
     return fig
 
@@ -458,6 +500,56 @@ def to_html(fname, fig, auto_open=False):
     pio.write_html(fig, filepath, auto_open=False, include_plotlyjs='cdn')
     print("Map saved to {}".format(filepath))
     
+### KPI by region lineplots ###
+
+hline_dict = dict(incid_tous=[dict(y=50, color='red', dash='dash'),
+                               dict(y=150,color='darkred', dash='dash'),
+                               dict(y=250,color='maroon', dash='dash')],
+                    incid_70=[dict(y=50,color='red', dash='dash'),
+                                  dict(y=100,color='darkred', dash='dash')],
+                    rea=[dict(y=30,color='darkred', dash='dash'),
+                            dict(y=60,color='black', dash='dash')])
+
+
+
+def plot_reg_kpi(metric, df):
+
+    title="<b>{}</b><br>(Use legend to hide/show regions)".format(metric)
+    icu_hlines = [dict(y=30, color='darkred', dash='dash'),
+                  dict(y=60, color='black', dash='dash')]
+    
+    q = "dom_tom=='False'" # no icu numbers for DOM
+    plot_df = df.query(q).dropna().groupby(['libelle_reg', 'jour'])[metric].mean().unstack(0)
+    
+    if metric=='incid_70+': # workaround special char in col names
+        hl_key = 'incid_70'
+    elif metric=='rea%':
+        hl_key = 'rea'
+    else:
+        hl_key = 'incid_tous'
+        
+    fig = plot_df.iplot(asFigure=True,
+               hline=hline_dict[hl_key],
+               title=title)
+
+    fig.update_layout(legend_title_text="Click to hide/show,<br>double-click to show only:",
+                      legend_title_font_size=13)
+    
+    return fig
+
+def output_reg_kpi(kpi_df):
+    for metric in ['incid_tous', 'incid_70+', 'rea%']:
+
+        fig = plot_reg_kpi(metric, kpi_df)
+        if metric=='rea%':
+            metric='rea'
+        elif metric=='incid_70+':
+            metric='incid_70'
+        else:
+            pass
+        fname = "kpi_{}_by_reg.html".format(metric)
+        to_html(fname, fig)
+        
 ### KPI lineplot functions  - for regional breakdown pg of covid_dataviz###
 
 def make_kpi_long_df(kpi_df):
@@ -466,9 +558,9 @@ def make_kpi_long_df(kpi_df):
     kpi_long = pd.DataFrame(kpi_df.set_index(index_cols)[val_cols].stack(dropna=False)).reset_index()
     kpi_long.columns = ['libelle_reg', 'reg', 'libelle_dep', 'jour','indicator', 'value']
     
-    return kpi_long
+    return kpi_long  
 
-def plot_reg_kpi(reg, df):
+def plot_reg_dept_kpi(reg, df):
     '''Compares indicator lines by department & by indicator for a given region. 
     Used on regional breakdown page of covid_dataviz.'''
     
@@ -487,17 +579,16 @@ def plot_reg_kpi(reg, df):
     
     return fig
 
-
-def output_reg_plots(reglist, df, auto_open=False):
+def output_reg_dept_plots(reglist, df):
     kpi_long_df = make_kpi_long_df(df)
     for reg in reglist:
         #regname = reg_ref_df['libelle_reg'].loc[reg_ref_df['reg']==reg].unique()[0]
-        fig = plot_reg_kpi(reg, kpi_long_df)
+        fig = plot_reg_dept_kpi(reg, kpi_long_df)
 
         # save to html
         fname = "kpi_{}.html".format(reg)
         #path = "../covid_dataviz/{}".format(str.lower(fname))
-        to_html(fname, fig, auto_open)
+        to_html(fname, fig)
         
 def output_reg_iframes(reglist):        
     for reg in reglist:
@@ -523,39 +614,50 @@ if __name__ == '__main__':
     latest_df = get_latest(metric, kpi_df)
     latest_date = latest_df.name
     
+    ## Alert choropleth
     print("Generating FR map...")
     q = "dom_tom=='False'"
     fig = make_overview_map(metric, latest_date, latest_df.query(q))
      
     # add cities to FR maps
     print("Adding cities...")
-    
     #cities_trace = add_cities()
     curfew_trace = add_curfew_cities(curfew_cities)
     fig.add_traces(curfew_trace)
     
-    # save alert level map as html
     print("Saving to HTML...")
     fname = 'alerts.html'
     to_html(fname, fig, False)
     
+    ## Indicator trendline barplot
     print("Generating FR indicator trends plot...")
     kpi_fr_df = create_kpi_summary(kpi_df)
     fig = plot_kpi_trends( kpi_fr_df)
-    fig.show()
-
+  
     print("Saving to HTML...")
     fname="kpi_fr_trends.html"
     to_html(fname, fig, auto_open=False)
     
+    ## ICU vs Deaths in hosp barplot
+    print("Generating FR ICU admisssions & deaths plot...")
+    fig = plot_rea_dc(kpi_fr_df)
+    fname='kpi_rea_dc_trends.html'
+    to_html(fname, fig, auto_open=False)
     
+
     # add regions to kpi_df
     reg_ref_df = pt.rd.create_region_df()
-    kpi_df = reg_ref_df[['reg', 'libelle_reg', 'libelle_dep']].merge(kpi_df).sort_values(['reg', 'jour'])
+    new_kpi_df = reg_ref_df[['reg', 'libelle_reg', 'libelle_dep']].merge(kpi_df).sort_values(['reg', 'jour'])
     reglist = [11, 24, 27, 28, 32, 44, 52, 53, 75, 76, 84, 93, 94]
     
-    print("Generating region line plots...")
-    output_reg_plots(reglist, kpi_df)
+    ## Indicators by region line plots      
+    print("Generating KPI by region plots...")
+    output_reg_kpi(new_kpi_df)
+    
+    ## for Compare dept page
+    print("Generating KPI by dept plots...")
+    output_reg_dept_plots(reglist, new_kpi_df)
+    
     
     print("****** DONE! ******\n")
     

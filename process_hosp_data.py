@@ -29,6 +29,14 @@ pop_csv = "data/Departements.csv"
 
 ## Helper functions ##
 
+# color mapping for plots
+
+hosp_colormap={"hosp": "blue",
+            "rea": "red",
+            "rad": "green",
+            "dc": "black"
+           }
+
 def get_hosp_data(url=hosp_url):
     '''Gets French hospital case counts
     for covid-19, by day & department.

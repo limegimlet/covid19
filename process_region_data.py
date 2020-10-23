@@ -4,6 +4,8 @@ from pathlib import Path
 
 ## Data sources
 
+icu_source = 'https://drees.solidarites-sante.gouv.fr/etudes-et-statistiques/publications/article/nombre-de-lits-de-reanimation-de-soins-intensifs-et-de-soins-continus-en-france'
+
 # FR regions
 
 dept_url = "https://www.insee.fr/fr/statistiques/fichier/3720946/departement2019-csv.zip"
@@ -13,6 +15,7 @@ icu_xls = "/data/drees_lits_reanimation_2013-2018.xlsx"
 
 # FR population
 pop_source: 'https://www.insee.fr/fr/statistiques/4265439?sommaire=4265511'
+pop_age_source: 'https://www.insee.fr/fr/statistiques/1893198'
 
 pop_csv = "data/Departements.csv"
 pop_age_xls = "https://www.insee.fr/fr/statistiques/fichier/1893198/estim-pop-dep-sexe-aq-1975-2020.xls"
