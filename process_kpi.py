@@ -48,7 +48,8 @@ rea_metro_src = 'https://www.data.gouv.fr/en/datasets/indicateurs-de-lactivite-e
 ### Geojson for FR depts and regions ###
 
 dept_geos = 'https://static.data.gouv.fr/resources/carte-des-departements-2-1/20191202-212236/contour-des-departements.geojson'
-region_geos = 'https://france-geojson.gregoiredavid.fr/repo/regions.geojson'
+#region_geos = 'https://france-geojson.gregoiredavid.fr/repo/regions.geojson'
+region_geos='https://raw.githubusercontent.com/gregoiredavid/france-geojson/master/regions-version-simplifiee.geojson'
 commune_geos = 'https://public.opendatasoft.com/explore/dataset/geoflar-communes-2013/download/?format=geojson&timezone=Europe/Berlin&lang=en'
 
 #epci_communes = 'https://www.data.gouv.fr/fr/datasets/contours-des-epci-2015/'
@@ -64,9 +65,18 @@ with urlopen(dept_geos) as response:
 with urlopen(region_geos) as response:
     fr_region = json.load(response)
 
-### Get lookup info locally
+
+### Global variables
+
+# Get lookup info locally
 
 path = 'data/'
+
+# boilperplate textangle
+
+boilerplate_fr = dict(main_subtitle="Faire glisser le curseur pour l'infobulle",
+                   legend_subtitle="Cliquer pour <br>masquer ou afficher")
+
 # reg_ref_df = pd.read_pickle(path + 'reg_ref_df.pkl')
 
 
@@ -78,11 +88,11 @@ def get_latest(col, df):
     latest_date = df['jour'].loc[df[col].notna()].max()
     latest_df = df.query('jour==@latest_date').drop('jour', axis=1)
 
-
-    if latest_date > '2020-10-14': # when curfews started
-        curfew_df = pd.read_pickle('data/curfew_depts.pkl')
-        latest_df = latest_df.merge(curfew_df[['libelle_dep','under_curfew']], how='outer')
-        latest_df.loc[latest_df['under_curfew']==True, 'niveau_global'] = 'Couvre-feu'
+    ## no longer relevant - DELETE?
+    #if latest_date > '2020-10-14': # when curfews started
+    #    curfew_df = pd.read_pickle('data/curfew_depts.pkl')
+    #    latest_df = latest_df.merge(curfew_df[['libelle_dep','under_curfew']], how='outer')
+    #    latest_df.loc[latest_df['under_curfew']==True, 'niveau_global'] = 'Couvre-feu'
 
     latest_df.name = latest_date
     return latest_df
@@ -264,8 +274,14 @@ colormap = {'OK': 'rgb(255,245,240)',
  'Alerte': 'rgb(251,106,74)',
  'Alerte renforcée': 'rgb(203,24,29)',
  'Alerte maximale': 'rgb(103,0,13)',
- 'État urgence sanitaire': 'rgb(0,0,0)',
- 'Couvre-feu': 'rgb(101, 67, 33)'}
+ 'État urgence sanitaire': 'rgb(37,37,37)',
+ 'Couvre-feu': 'rgb(102, 101, 101)'}
+
+label_trans = {#'rea%': '% occup. réa (rég)',
+               #'rea%_dep': '% occup. réa (dép)',
+               'libelle_reg': 'région',
+               'libelle_dep': 'département',
+               'niveau_global': 'niveau'}
 
 # for adding scatterplot trace of curfew cities over alert map
 def add_cities(): # TODO: merge with function below
@@ -307,39 +323,45 @@ def make_overview_map(map_col, date, latest_df, source=source, colormap=colormap
     #map_df, date = create_overview_df(kpi_df)
     #map_df = get_latest('niveau_global', kpi_df)
     #date = map_df.name
-    title = '<b>Alerts indicators from {} + <br>curfew area as of Oct 24</b><br>(hover for more info)'.format(date)
+    title = "<b>Niveaux d'alerte  - {}</b><br>({})".format(date, boilerplate_fr['main_subtitle'])
     source_str = "Source: <a href='{}' color='blue'>Santé Publique France</a>".format(source) # for annotation
-    latest_df = latest_df.round(0)
 
-    fig = px.choropleth(latest_df, geojson=fr_dept, color=map_col,
+    # modify dataframe to display more readableß hovertext
+    plot_df = latest_df.round(0)
+    plot_df['hovername'] = plot_df['libelle_dep'] + " (" + plot_df['libelle_reg'] + ")"
+    plot_df['rea%'] = plot_df['rea%'].divide(100)
+
+    fig = px.choropleth(plot_df, geojson=fr_dept, color=map_col,
                     locations="libelle_dep", featureidkey="properties.nom",
                     #animation_frame="variable", animation_group='libelle_dep',
-                    hover_name='libelle_dep',  hover_data={#'valeurs':True,
+                    hover_name='hovername',  hover_data={
                                                            'libelle_dep': False,
                                                            'incid_tous':':.0f',
                                                            'incid_70+': ':.0f',
-                                                           'rea%': ':.0f',
-                                                           'rea%_dep': ':.0f'},
+                                                           'rea%': ':.0%'},
                     locationmode='geojson-id',
+                    labels=label_trans,
                     color_discrete_map=colormap,
                     category_orders={map_col: list(colormap.keys())},
                     projection="mercator")
 
 
-    fig.update_geos(fitbounds="locations", visible=False)
+    fig.update_geos(fitbounds="locations",
+                    visible=False,
+                    countrycolor='rgb(255,255,255)')
 
 
     fig.update_layout(margin={"r":0,"t":0,"l":0,"b":20},
                  title={'text': title,
                         'y':.97,
-                        'x':0.15,
+                        'x':0.10,
                         'xanchor': 'left',
                         'yanchor': 'top'},
                 hoverlabel=dict(
                         bgcolor="white",
                         font_size=12,
                         font_family="Rockwell"),
-                  legend_title_text='Levels<br>(click to hide/show)',
+                  legend_title_text='Niveaux<br>({})'.format(boilerplate_fr['legend_subtitle']),
                   legend_title_font_size=14,
                   legend=dict(yanchor="top", # so legend doesn't block hover menu
                               y=0.9,
@@ -392,62 +414,70 @@ def make_value_map(map_col, date, latest_df, source=source):
     return fig
 
 
-def map_rea(map_col, date, latest_df, source=hd.source):
+def map_rea(map_col, date, latest_df, source=hd.source, labels=boilerplate_fr):
     '''Plots a continuous-scale choropleth for ICU saturation (in %) in France.
     Max range value = 60%, which is the threshold for "état d'urgence sanitaire"
     (when incidence rate > 250 & elderly incidence rate > 100 are also reached).'''
 
-    #map_df = get_latest(map_col, df)
-    #date = map_df.name # for title
-
     latest_df['reg'] = latest_df['reg'].astype('str')
     latest_df = latest_df.round(0)
 
+    # arg vals depend on whether rea% based on dep or region
     if map_col=='rea%_dep':
-        title = '<b>Rea% by dept - {}</b>'.format(date)
+        title = '<b> - {}</b>'.format(date)
         color_range = [0,100]
-        #id = 'properties.nom'
-        #geo = fr_dept
-        #loc = 'libelle_dep'
-        #hovername = 'libelle_dep'
+        feat_id = 'properties.nom'
+        geo = fr_dept
+        loc = 'libelle_dep'
+        hovername = 'libelle_dep'
     elif map_col=='rea%':
-        title = '<b>Rea% by region - {}</b>'.format(date)
         color_range = [0,60]
-        #id = 'properties.code'
-        #geo = fr_region
-        #loc = 'reg'
-        #hovername = 'libelle_reg'
+        feat_id = 'properties.code'
+        geo = fr_region
+        loc = 'reg'
+        hovername = 'libelle_reg'
+    else:
+        print("Not a valid map column. Use rea% or rea%_dep.")
 
+    source_str = "Source: <a href='{}' color='blue'>Santé Publique France</a>".format(source) # for annotation
+    title = '<b>{} - {}</b><br>({})'.format(map_col, date, boilerplate_fr['main_subtitle'])
 
-
-    source_str = source_str = "Source: <a href='{}' color='blue'>Santé Publique France</a>".format(hd.source) # for annotation
-    #alert_col = '{}_alerte'.format(map_col) # for hover text
-
-    fig = px.choropleth(latest_df, geojson=fr_dept, color=map_col,
-                    locations='libelle_dep', featureidkey='properties.nom',
+    fig = px.choropleth(latest_df, geojson=geo, color=map_col,
+                    locations=loc, featureidkey=feat_id,
                     #animation_frame="variable", animation_group='libelle_dep',
-                    hover_name='libelle_dep',  hover_data={#alert_col: True,
-                                                        'libelle_reg': True,
-                                                        'libelle_dep': False},
+                    hover_name=hovername,
+                    hover_data={'reg': False,
+                                'libelle_reg':False,
+                                'libelle_dep': False},
+                    labels=label_trans,
+
                     color_continuous_scale="Reds",
                     range_color=color_range,
                     projection="mercator")
 
-
-    fig.update_geos(fitbounds="locations", visible=False)
-
-    #fig.add_traces(cities)
+    fig.update_geos(fitbounds="locations",
+                    visible=False)
 
     fig.update_layout(margin=dict(r=0, t=0, l=0, b=20),
-                     title=dict(text=title, y=.98, x=0.2, xanchor='left', yanchor='top'),
+                     title=dict(text=title, y=.95, x=0.05, xanchor='left', yanchor='top'),
                      hoverlabel=dict(bgcolor="white",
                                     font_size=12,
                                     font_family="Rockwell"),
+                     # source at bottom
                      annotations=[dict(x= 1, y= 0,
                                        text=source_str, showarrow = False,
                                        xref='paper', yref='paper',
-                                       xanchor='right', yanchor='auto')]
-                                )
+                                       xanchor='right', yanchor='auto')],
+                     )
+
+    fig.update_layout(coloraxis_colorbar=dict(
+                                        title=None,
+                                        thicknessmode="pixels", thickness=25,
+                                        lenmode="fraction", len=.6,
+                                        yanchor="top", y=.8,
+                                        ticks="outside", ticksuffix="%",
+                                    ))
+
 
     return fig
 
@@ -464,7 +494,7 @@ def create_kpi_summary(df):
 
 
 def plot_kpi_trends(kpi_fr_df):
-    '''Plots daily ttls for alert indicator for all of France.'''
+    '''Plots daily AVG for alert indicator for all of France.'''
 
     #rea_hlines = [dict(y=30, color='darkgreen', width=1.5, dash='dash')]
      #            #dict(y=60, color='darkred')]
@@ -473,20 +503,27 @@ def plot_kpi_trends(kpi_fr_df):
     #hline_annot = [{'text':'30% ICU occupancy','y':'30', 'x':'2020-07-02',
                     #'textangle':0,'ay':-10}]
 
-    fig = kpi_fr_df.iplot(title="<b>Covid-19 indicator trends - France</b>",
+    fig = kpi_fr_df.iplot(title="<b>Covid-19 indicator trends - France</b><br>(daily avg of all depts)",
                           kind='bar',
                           #hline=rea_hlines,
                           #annotations=hline_annot,
                           asFigure=True)
 
-    line_trace = go.Scatter(x=[kpi_fr_df.index.min(), kpi_fr_df.index.max()],
-                            y=[30,30],  # on oct 15, macron said we need to keep new ICU admissions to < 200
+    max_trace = go.Scatter(x=[kpi_fr_df.index.min(), kpi_fr_df.index.max()],
+                            y=[30,30],
+                            mode='lines',
+                            line_color='green',
+                            line_dash='dot',
+                            name="<br>rea% saturation threshold<br>for Alerte maximale")
+
+    urg_trace = go.Scatter(x=[kpi_fr_df.index.min(), kpi_fr_df.index.max()],
+                            y=[60,60],
                             mode='lines',
                             line_color='green',
                             line_dash='dashdot',
-                            name="<br>\nICU % capacity threshold<br>for Alerte maximale")
+                            name="<br>rea% saturation threshold<br>for Etat urgence<br>sanitaire")
 
-    fig.add_traces(line_trace)
+    fig.add_traces([max_trace, urg_trace])
 
 
     fig.update_layout(legend_title_text="Click to hide/show,<br>double-click to show only:",
@@ -515,7 +552,7 @@ def get_new_admissions(geo='fr', url=hd.new_patients_url):
 
 def plot_rea_dc(kpi_fr_df, palette=hd.hosp_colormap):
     cols = ['rea', 'dc']
-    new_ad = kpi.get_new_admissions().dropna()
+    new_ad = get_new_admissions().dropna()
     rea_dc_df = kpi_fr_df.join(new_ad, how='right')
 
     fig = rea_dc_df[cols].iplot(
@@ -584,7 +621,7 @@ def output_reg_kpi(kpi_df):
 ### KPI lineplot functions  - for regional breakdown pg of covid_dataviz###
 
 def make_kpi_long_df(kpi_df):
-    val_cols = ['incid_tous', 'incid_70+', 'rea%']
+    val_cols = ['incid_tous', 'incid_70+', 'rea%', 'rea%_dep']
     index_cols = ['libelle_reg', 'reg', 'libelle_dep', 'jour']
     kpi_long = pd.DataFrame(kpi_df.set_index(index_cols)[val_cols].stack(dropna=False)).reset_index()
     kpi_long.columns = ['libelle_reg', 'reg', 'libelle_dep', 'jour','indicator', 'value']
@@ -595,13 +632,14 @@ def plot_reg_dept_kpi(reg, df):
     '''Compares indicator lines by department & by indicator for a given region.
     Used on regional breakdown page of covid_dataviz.'''
 
+    reg_ref_df = pd.read_pickle('data/reg_ref_df.pkl')
     regname = reg_ref_df['libelle_reg'].loc[reg_ref_df['reg']==reg].unique()[0]
-    fig = px.line(df.query('reg==@reg').dropna(), x='jour', y='value',
+    fig = px.line(df.query("reg==@reg & indicator !='rea%'").dropna(), x='jour', y='value',
                   color='libelle_dep',
-                  title="{} alert indicators over time<br>(Hover for more info)".format(regname),
+                  title="Covid indicators - {}".format(regname),
                   hover_name='libelle_dep',
                   hover_data={'libelle_dep': False},
-                  category_orders={'indicator':['incid_tous', 'incid_70+', 'rea%']},
+                  category_orders={'indicator':['incid_tous', 'incid_70+', 'rea%_dep']},
                   color_discrete_sequence=px.colors.qualitative.D3,
                   facet_row='indicator',
                   facet_row_spacing=.05,
@@ -616,42 +654,46 @@ def output_reg_dept_plots(reglist, df):
 
     # define the traces for threshold lines
     #TODO: turn into for lookup
-    incid_tous_trace2 = kpi.go.Scatter(x=[x_min, x_max],
+
+    x_min = kpi_long_df['jour'].min()
+    x_max = kpi_long_df['jour'].max()
+
+    incid_tous_trace2 = go.Scatter(x=[x_min, x_max],
                             y=[250, 250] ,
                             mode='lines',
                             line_color='darkred',
                             line_dash='dot',
                             showlegend=False)
 
-    incid_tous_trace = kpi.go.Scatter(x=[x_min, x_max],
+    incid_tous_trace = go.Scatter(x=[x_min, x_max],
                             y=[150, 150],
                             mode='lines',
                             line_color='red',
                             line_dash='dot',
                             showlegend=False)
 
-    incid_70_trace2 = kpi.go.Scatter(x=[x_min, x_max],
+    incid_70_trace2 = go.Scatter(x=[x_min, x_max],
                             y=[100,100],
                             mode='lines',
                             line_color='darkred',
                             line_dash='dot',
                             showlegend=False)
 
-    incid_70_trace = kpi.go.Scatter(x=[x_min, x_max],
+    incid_70_trace = go.Scatter(x=[x_min, x_max],
                             y=[50,50],
                             mode='lines',
                             line_color='red',
                             line_dash='dot',
                             showlegend=False)
 
-    rea_max_trace = kpi.go.Scatter(x=[x_min, x_max],
+    rea_max_trace = go.Scatter(x=[x_min, x_max],
                             y=[30,30],
                             mode='lines',
                             line_color='darkred',
                             line_dash='dot',
                             showlegend=False)
 
-    rea_urg_trace = kpi.go.Scatter(x=[x_min, x_max],
+    rea_urg_trace = go.Scatter(x=[x_min, x_max],
                             y=[60,60],
                             mode='lines',
                             line_color='black',
@@ -737,19 +779,36 @@ if __name__ == '__main__':
     fname='kpi_rea_dc_trends.html'
     to_html(fname, fig, auto_open=False)
 
-
-    # add regions to kpi_df
-    reg_ref_df = pt.rd.create_region_df()
-    new_kpi_df = reg_ref_df[['reg', 'libelle_reg', 'libelle_dep']].merge(kpi_df).sort_values(['reg', 'jour'])
-    reglist = [11, 24, 27, 28, 32, 44, 52, 53, 75, 76, 84, 93, 94]
+    # add regions to kpi_df - REDUNDANT???
+    #reg_ref_df = pt.rd.create_region_df()
+    #new_kpi_df = reg_ref_df[['reg', 'libelle_reg', 'libelle_dep']].merge(kpi_df).sort_values(['reg', 'jour'])
 
     ## Indicators by region line plots
     print("Generating KPI by region plots...")
-    output_reg_kpi(new_kpi_df)
+    #output_reg_kpi(new_kpi_df)
+    output_reg_kpi(kpi_df)
 
     ## for Compare dept page
     print("Generating KPI by dept plots...")
-    output_reg_dept_plots(reglist, new_kpi_df)
+    reglist = [11, 24, 27, 28, 32, 44, 52, 53, 75, 76, 84, 93, 94]
+    #output_reg_dept_plots(reglist, new_kpi_df)
+    output_reg_dept_plots(reglist, kpi_df)
 
+    ## rea% choropleth maps for Overvew page
+    print("Generating region rea% maps...")
+    map_col = 'rea%'
+    latest_rea = get_latest(map_col, kpi_df)
+    latest_rea_date = latest_rea.name
+    rea_fig = map_rea(map_col, latest_rea_date, latest_rea)
+
+    fname = "rea_pct_region.html"
+    to_html(fname, rea_fig)
+
+    print("Generating dept rea% maps...")
+    map_col = 'rea%_dep'
+    dep_rea_fig = map_rea(map_col, latest_rea_date, latest_rea)
+
+    fname = "rea_pct_dept.html"
+    to_html(fname, dep_rea_fig)
 
     print("****** DONE! ******\n")

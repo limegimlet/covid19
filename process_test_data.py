@@ -1,5 +1,5 @@
 import pandas as pd
-import process_region_data as rd
+#import process_region_data as rd
 
 
 ### Data sources ###
@@ -47,18 +47,19 @@ def create_testing_df(all_ages=True):
         df = df.loc[df['cl_age90']!=0]   
     
     # rename columns
-    new_names = {'P':'positive_tests',
-                 'T': 'total_tests',
+    new_names = {'P':'pos',
+                 'T': 'tests_total',
                  'cl_age90': 'age_range'}
 
     df = df.rename(columns = new_names)
     df['age_range'] = fix_ages(df['age_range'])
 
     # calc positivity rate - Pointless?? It all seems based on 7day rolling totals
-    df['pct_pos_tests'] = df['positive_tests'].divide(df['total_tests']).multiply(100).round(2)
+    df['pos_rate'] = df['pos'].divide(df['tests_total']).multiply(100).round(2)
 
     # get region & dept names & codes, as well as dept population
-    reg_ref_df = rd.create_region_df()
+    #reg_ref_df = rd.create_region_df()
+    reg_ref_df = pd.read_pickle('data/reg_ref_df.pkl')
     
      # cleaning: sometimes deps are numeric
     #df['dep'] = df['dep'].astype('str')
@@ -102,13 +103,13 @@ def get_pop(geo_col, df, pop_col='population'):
 
 def to_100k_pop(metric_col, geo_col, df, dec_places=2):
     pop_col = get_pop(geo_col, df)
-    col_100k_pop = metric_col.T.multiply(100000).div(pop_col, axis=0).round(dec_places).T
+    col_100k_pop = (metric_col.T.multiply(100000)).div(pop_col, axis=0).round(dec_places).T
     
     return col_100k_pop
     
 def create_rolling_cols(df):
-    rolling_pos = make_rolling_sum( 'positive_tests', 'libelle_dep', df)
-    rolling_total = make_rolling_sum( 'total_tests', 'libelle_dep', df)
+    rolling_pos = make_rolling_sum('pos', 'libelle_dep', df)
+    rolling_total = make_rolling_sum('tests_total', 'libelle_dep', df)
     rolling_pos_rate = to_percent(rolling_pos, rolling_total)
     rolling_pos_100k = to_100k_pop(rolling_pos, 'libelle_dep', df)
     rolling_test_100k = to_100k_pop(rolling_total, 'libelle_dep', df)
@@ -122,19 +123,42 @@ def create_rolling_cols(df):
 ### for dept-age df ###
 
 def create_pop_age_df():
-    pop_age_df = rd.create_pop_age_df().reset_index('libelle_dep').set_index('libelle_dep')
+    #pop_age_df = rd.create_pop_age_df().reset_index('libelle_dep').set_index('libelle_dep')
+    pop_age_df = pd.read_pickle('data/pop_age_df.pkl').reset_index('libelle_dep').set_index('libelle_dep')
     pop_age_df = pop_age_df.stack().reset_index().rename(columns={'level_1': 'age_range',
-                                                                  0: 'ag_pop'})
+                                                                  0: 'age_range_pop'})
     # manually fix dept names
     pop_age_df['libelle_dep'] = pop_age_df['libelle_dep'].replace({'Guadeloupe ':"Guadeloupe",
                                                                   'Martinique ':"Martinique"})
     
     return pop_age_df
 
-def create_dept_age_df():
+## by dept & age
+
+def create_rolling_by_age(metric, dept_age_df, n):
+    wide_df = dept_age_df.set_index( ['libelle_dep', 'age_range','jour'])[[metric]].unstack(0).unstack(0)
+    rolling_metric = wide_df.rolling(n).mean().round(2).stack(1).stack().reset_index()#set_index(['libelle_dep', 'jour', 'age_range'])
+    rolling_name = "{}_rolling".format(metric)
+    rolling_metric = rolling_metric.rename(columns={metric:rolling_name})
+    
+    return rolling_metric
+
+def merge_rolling_by_age(metric_list, dept_age_df, n):
+    for metric in metric_list:
+        new_metric = create_rolling_by_age(metric, dept_age_df, n)
+        dept_age_df = dept_age_df.merge(new_metric)
+        
+    # make column order more logical
+    dept_age_df.set_index(['libelle_dep', 'jour'], inplace=True)
+    neworder = dept_age_df.columns.sort_values()
+    dept_age_df = dept_age_df.reindex(neworder, axis=1)
+        
+    return dept_age_df.reset_index()
+
+def create_dept_age_df(metrics = ['pos_rate', 'pos_100k', 'test_100k'], n=7):
     df = create_testing_df(False)
-    dept_age_df = df.set_index(['libelle_dep', 'jour', 'age_range'])[['positive_tests', 'total_tests']]
-    dept_age_df['pos_rate'] = dept_age_df['positive_tests'].multiply(100).divide(dept_age_df['total_tests']).round(2)
+    dept_age_df = df.set_index(['libelle_dep', 'jour', 'age_range'])[['pos', 'tests_total']]
+    dept_age_df['pos_rate'] = dept_age_df['pos'].multiply(100).divide(dept_age_df['tests_total']).round(2)
     dept_age_df = dept_age_df.reset_index()
     
     pop_age_df = create_pop_age_df()
@@ -142,8 +166,13 @@ def create_dept_age_df():
     # merge pop data with age-dept df
     dept_age_df = dept_age_df.merge(pop_age_df, on=['libelle_dep', 'age_range'], how='left').sort_values(['libelle_dep', 'jour'])
     
-    # calc incidence rate
-    dept_age_df['pos_100k'] = dept_age_df['positive_tests'].multiply(100000).divide(dept_age_df['ag_pop']).round(2)
+    # calc incidence & test rates
+    dept_age_df['pos_100k'] = dept_age_df['pos'].multiply(100000).divide(dept_age_df['age_range_pop']).round(2)
+    dept_age_df['test_100k'] = dept_age_df['tests_total'].multiply(100000).divide(dept_age_df['age_range_pop']).round(2)
+    
+    # add rolling columsn
+    
+    dept_age_df = merge_rolling_by_age(metrics, dept_age_df, n)
 
     return dept_age_df
 
@@ -157,10 +186,10 @@ def calc_older_incid():
     older = ['70-79', '80-89', '90+']
     dept_age_df = create_dept_age_df()
     dept_age_df['older'] = dept_age_df['age_range'].isin(older)
-    older_df = dept_age_df.groupby(['libelle_dep', 'jour', 'older'])[['positive_tests', 'ag_pop']].sum()
+    older_df = dept_age_df.groupby(['libelle_dep', 'jour', 'older'])[['pos', 'age_range_pop']].sum()
 
     # calculate incidence rate
-    older_df['pos_100k'] = older_df['positive_tests'].multiply(100000).div(older_df['ag_pop']).round(2)
+    older_df['pos_100k'] = older_df['pos'].multiply(100000).div(older_df['age_range_pop']).round(2)
     # make rolling 7-day totals
     older_incid = older_df['pos_100k'].unstack(0).unstack().rolling(7).sum().stack(0)
     older_incid.columns = ['Under 70', '70+']
