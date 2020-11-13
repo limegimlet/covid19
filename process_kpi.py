@@ -142,6 +142,8 @@ def assign_overall_alert(row):
     #    return "Couvre-feu"
     elif (row['incid_tous'] > 250. and row['incid_70+'] >100. and row['rea%'] >60.0):
         return "État urgence sanitaire"
+    elif (row['incid_tous'] > 150. and row['incid_70+'] >100. and row['rea%'] >60.0):
+        return  "Alerte maximale"
     elif (row['incid_tous'] > 250. and row['incid_70+'] >100. and row['rea%'] >30.0):
         return  "Alerte maximale"
     elif (row['incid_tous'] > 150. and row['incid_70+'] >50.):
@@ -431,7 +433,7 @@ def map_rea(map_col, date, latest_df, source=hd.source, labels=boilerplate_fr):
         loc = 'libelle_dep'
         hovername = 'libelle_dep'
     elif map_col=='rea%':
-        color_range = [0,60]
+        color_range = [0,100]
         feat_id = 'properties.code'
         geo = fr_region
         loc = 'reg'
@@ -586,8 +588,9 @@ def plot_reg_kpi(metric, df):
     icu_hlines = [dict(y=30, color='darkred', dash='dash'),
                   dict(y=60, color='black', dash='dash')]
 
-    q = "dom_tom=='False'" # no icu numbers for DOM
+    #q = "dom_tom=='False'" # no icu numbers for DOM
     plot_df = df.query(q).dropna().groupby(['libelle_reg', 'jour'])[metric].mean().unstack(0)
+    #plot_df = df.dropna().groupby(['libelle_reg', 'jour'])[metric].mean().unstack(0)
 
     if metric=='incid_70+': # workaround special char in col names
         hl_key = 'incid_70'
